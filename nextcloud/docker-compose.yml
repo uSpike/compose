@@ -1,0 +1,63 @@
+version: '2'
+
+networks:
+  local:
+  macvlan-server:
+    external:
+      name: macvlan-server
+
+services:
+  redis:
+    image: redis:alpine
+    restart: always
+    networks:
+      local:
+  db:
+    image: mariadb
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
+    restart: always
+    volumes:
+      - /srv/nextcloud_db/mysql:/var/lib/mysql
+    networks:
+      local:
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+  app:
+    image: nextcloud:apache
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - /mnt/tank/nextcloud/data:/var/www/html
+      - /mnt/tank/media/music:/mnt/music:ro
+    networks:
+      local:
+      macvlan-server:
+        ipv4_address: ${SERVER_IP}
+    environment:
+      - REDIS_HOST=redis
+      - MYSQL_HOST=db
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      # for reverse proxy
+      - NEXTCLOUD_TRUSTED_DOMAINS=${DOMAIN}
+      - APACHE_DISABLE_REWRITE_IP=1
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES}
+      - OVERWRITEHOST=cloud.${DOMAIN}
+      - OVERWRITEPROTOCOL=https
+      - 'OVERWRITECONDADDR=.*'
+    restart: always
+  cron:
+    image: nextcloud:apache
+    volumes_from:
+      - app
+    depends_on:
+      - db
+      - redis
+    networks:
+      local:
+    entrypoint: /cron.sh
